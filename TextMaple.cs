@@ -237,15 +237,16 @@ namespace TextMapleStory
 
 
     // 프로그램의 진입점(entry point)인 클래스
-    // 이 클래스는 프로그램 실행 시 가장 먼저 실행되는 Main() 메서드를 포함하고 있습니다.
-    internal class Program
+    // 이 클래스는 프로그램 실행 시 가장 먼저 실행되는 메서드를 포함하고 있습니다.
+    internal class TextMapleStory
     {
         static Character player = new Character();
         static List<Item> inventory = new List<Item>();
         static List<ShopItem> shopItems = new List<ShopItem>();
         static Timer? autoSaveTimer;
-
-        static void Main() // 프로그램 시작점 함수
+        
+        // 프로그램 시작점 함수
+        static void Main()
         {
             // AutoSave 호출: 프로그램 시작 시 10분마다 자동 저장 시작
             AutoSave();
@@ -518,7 +519,7 @@ namespace TextMapleStory
             {
                 Item item = equipableItems[i];
                 string equippedMark = item.IsEquipped ? "[E]" : "";
-                Console.WriteLine($"{i + 1}. {equippedMark} {item.Name} | {item.Description} | {item.EquipmentType}"); 
+                Console.WriteLine($"{i + 1}. {equippedMark} {item.Name} | {item.Description} | {item.EquipmentType}");
             }
 
             Console.WriteLine("0. 나가기\n");
@@ -532,28 +533,40 @@ namespace TextMapleStory
                     Console.WriteLine("\n[인벤토리로 돌아갑니다...]\n");
                     ShowInventory();
                 }
-                else if (index >= 1 && index <= inventory.Count)
+                else if (index >= 1 && index <= equipableItems.Count)
                 {
-                    Item selectedItem = equipableItems[index - 1];
+                    Item selectedItem = equipableItems[index - 1];  // 다시 선언 없이 기존 selectedItem 사용
 
-                    // 장착하려는 아이템의 EquipmentType이 이미 장착된 상태라면
-                    if (inventory.Any(i => i.IsEquipped && i.EquipmentType == selectedItem.EquipmentType && i != selectedItem))
+                    // 장착하려는 아이템이 이미 장착된 상태라면
+                    if (selectedItem.IsEquipped)
                     {
-                        Console.WriteLine($"<{selectedItem.EquipmentType}>는 이미 장착되어 있습니다. 다른 장비를 장착해주세요.");
-                        ManageEquipment();
+                        // 장착된 아이템을 해제
+                        selectedItem.IsEquipped = false;
+                        var itemToUpdate = inventory.First(i => i.Name == selectedItem.Name);
+                        itemToUpdate.IsEquipped = false;
+
+                        Console.WriteLine($"{selectedItem.Name}을(를) 해제했습니다.");
+                        ManageEquipment(); // 장착 관리 화면을 다시 출력
                     }
                     else
                     {
-                        selectedItem.IsEquipped = !selectedItem.IsEquipped;
+                        // 동일한 아이템 타입을 가진 기존 장착 아이템 해제
+                        var equippedItem = inventory.FirstOrDefault(i => i.IsEquipped && i.EquipmentType == selectedItem.EquipmentType);
+                        if (equippedItem != null)
+                        {
+                            equippedItem.IsEquipped = false;
+                            Console.WriteLine($"{equippedItem.Name}을(를) 해제하고 {selectedItem.Name}을(를) 장착합니다.");
+                        }
 
+                        // 새로운 아이템을 장착
+                        selectedItem.IsEquipped = true;
+
+                        // 장착된 아이템을 업데이트
                         var itemToUpdate = inventory.First(i => i.Name == selectedItem.Name);
                         itemToUpdate.IsEquipped = selectedItem.IsEquipped;
 
-                        Console.WriteLine(selectedItem.IsEquipped
-                            ? $"\n{selectedItem.Name}을(를) 장착했습니다.\n"
-                            : $"\n{selectedItem.Name}을(를) 장착을 해제했습니다.\n");
-
-                        ManageEquipment();
+                        Console.WriteLine($"{selectedItem.Name}을(를) 장착했습니다.");
+                        ManageEquipment(); // 장착 관리 화면을 다시 출력
                     }
                 }
                 else
@@ -568,6 +581,7 @@ namespace TextMapleStory
                 ManageEquipment();
             }
         }
+
 
         // 인벤토리에 있는 아이템 목록을 출력하는 함수
         static void PrintInventory(bool showIndex = false) 
