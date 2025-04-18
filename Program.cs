@@ -65,15 +65,18 @@ namespace TextMapleStory
     // 게임 내 아이템을 정의하는 클래스
     class Item
     {
-        public string RawName { get; set; }  // 원래 이름
-        public string Name => Star > 0 ? $"{RawName} ({Star}성)" : RawName; // 표시용 이름
+        [JsonPropertyName("Name")]
+        public string RawName { get; set; }  // 저장용 이름
+
+        [JsonIgnore]
+        public string Name => Star > 0 ? $"{RawName} ({Star}성)" : RawName;  // 표시용 이름
 
         public string Description { get; set; }
         public int Power { get; set; }
         public StatType Type { get; set; }
         public EquipmentType EquipmentType { get; set; }
         public bool IsEquipped { get; set; } = false;
-        public int Star { get; set; } = 0; // ⭐ 강화 수치
+        public int Star { get; set; } = 0;
 
         public int Price => Power * 1000;
 
@@ -553,7 +556,7 @@ namespace TextMapleStory
             int successChance = 80 - (selectedItem.Star * 2);
             int failChance = 15 + (selectedItem.Star * 2);
             int downgradeChance = 5 + (selectedItem.Star);
-            int statBoost = rand.Next(0, 4) * selectedItem.Star;
+            int statBoost = rand.Next(1, 4) * selectedItem.Star;
             int randomValue = rand.Next(1, 101);
 
             Console.WriteLine($"\n성공 확률: {successChance}%, 실패: {failChance}%, 하락: {downgradeChance}%\n");
