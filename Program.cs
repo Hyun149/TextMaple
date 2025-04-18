@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using System.Reflection.Emit;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -16,7 +17,7 @@ namespace TextMapleStory
         public List<bool> ShopPurchases { get; set; } = new List<bool>(); // 기본적으로 빈 리스트로 초기화
         public bool HasClassChanged { get; set; } // 전직 여부 저장
 
- 
+
 
         // 생성자 (기본값으로 리스트를 초기화)
         [JsonConstructor]
@@ -42,7 +43,7 @@ namespace TextMapleStory
     }
 
     // 캐릭터의 능력치를 정의하는 enum
-    enum StatType 
+    enum StatType
     {
         전투력,
         방어력,
@@ -50,7 +51,7 @@ namespace TextMapleStory
     }
 
     // 장비 종류를 정의하는 enum
-    enum EquipmentType 
+    enum EquipmentType
     {
         모자,
         무기,
@@ -64,26 +65,26 @@ namespace TextMapleStory
     // 게임 내 아이템을 정의하는 클래스
     class Item
     {
-        public string Name { get; set; }
+        public string RawName { get; set; }  // 원래 이름
+        public string Name => Star > 0 ? $"{RawName} ({Star}성)" : RawName; // 표시용 이름
+
         public string Description { get; set; }
         public int Power { get; set; }
-        public StatType Type { get; set; } // enum 타입으로 변경
-        public EquipmentType EquipmentType { get; set; } // 새로운 장비 타입
+        public StatType Type { get; set; }
+        public EquipmentType EquipmentType { get; set; }
         public bool IsEquipped { get; set; } = false;
-        public int Price
-        {
-            get { return Power * 1000; } // 전투력 * 1000을 가격으로 설정
-        }
+        public int Star { get; set; } = 0; // ⭐ 강화 수치
 
-        // 아이템 생성자
+        public int Price => Power * 1000;
+
         public Item(string name, StatType type, int power, string description, EquipmentType equipmentType)
         {
-            Name = name;
+            RawName = name;
             Type = type;
             Power = power;
             Description = description;
             EquipmentType = equipmentType;
-        }      
+        }
     }
 
     // 플레이어 캐릭터의 상태를 정의하는 클래스
@@ -96,7 +97,7 @@ namespace TextMapleStory
         public int Defense { get; set; } = 5;
         public int HP { get; set; } = 100;
         public int MaxHP { get; set; } = 100;  // 최대 체력 추가
-        public long Meso { get; set; } = 10000;
+        public long Meso { get; set; } = 1000000;
         public int Exp { get; set; } = 0;
         public int MaxExp { get; set; } = 100;
         public bool HasClassChanged { get; set; } = false;
@@ -141,8 +142,7 @@ namespace TextMapleStory
                 Attack += 15;  // 전직 후 능력치 증가
                 Defense += 15;
                 MaxHP += 15;
-                Console.WriteLine($"{Name}의 직업이 {Job}로 변경되었습니다!");
-                Console.WriteLine($"전투력: {Attack}, 방어력: {Defense}, 체력: {MaxHP})"); // "스킬획득: 매직클로"
+                Console.WriteLine($"{Name}의 직업이 {Job}로 변경되었습니다!\n전투력: {Attack}, 방어력: {Defense}, 체력: {MaxHP}"); // "스킬획득: 매직클로"
 
                 HasClassChanged = true;  // 전직 완료 후 전직 여부를 true로 설정
             }
@@ -205,7 +205,7 @@ namespace TextMapleStory
             Defense = defense;
             ExpReward = expReward;
             MesoDrop = mesoDrop;
-        }       
+        }
 
         // 몬스터 처치 후 경험치와 메소를 주는 메서드
         public void DropRewards(Character player)
@@ -214,17 +214,36 @@ namespace TextMapleStory
             player.Meso += MesoDrop;  // 드랍된 메소를 플레이어에게 추가
             Console.WriteLine($"{Name}은(는) {MesoDrop} 메소를 드랍했습니다!\n경험치: {player.Exp + ExpReward} / {player.MaxExp}");
 
+            Random rand = new Random();
+            double dropChance = rand.NextDouble();  // 0과 1 사이의 실수값 반환
+
+            if (dropChance <= 0.1)
+            {
+                // 머쉬맘의 포자 드롭
+                if (Name == "머쉬맘")
+                {
+                    var mushyMushroomSpores = new Item("머쉬맘의 포자", StatType.체력, 50, "[튜토리얼 보스]머쉬맘의 포자이다. 머리에 쓰면 든든할 것 같다.", EquipmentType.모자);
+                    AddDroppedItem(mushyMushroomSpores, player);
+                }
+            }
+
             foreach (var item in DroppedItems)
             {
-                player.Inventory.Add(item);
                 Console.WriteLine($"{item.Name}을(를) 드랍했습니다!");
             }
         }
 
         // 아이템 드롭 설정
-        public void AddDroppedItem(Item item)
+        public void AddDroppedItem(Item item, Character player)  // player 객체를 매개변수로 받음
         {
             DroppedItems.Add(item);
+            Console.WriteLine($"{item.Name}을(를) DroppedItems에 추가했습니다!");
+
+            if (!player.Inventory.Contains(item))  // 중복 방지
+            {
+                player.Inventory.Add(item);  // inventory에 아이템 추가
+                Console.WriteLine($"{item.Name}이(가) 플레이어 인벤토리에 추가되었습니다.");
+            }
         }
 
         // 몬스터가 공격하는 메서드
@@ -240,11 +259,14 @@ namespace TextMapleStory
     // 이 클래스는 프로그램 실행 시 가장 먼저 실행되는 메서드를 포함하고 있습니다.
     internal class TextMapleStory
     {
+        public static string GetFormattedMeso() => player.Meso.ToString("N0");
+        public static string FormatPrice(long Price) => Price.ToString("N0");
+
         static Character player = new Character();
         static List<Item> inventory = new List<Item>();
         static List<ShopItem> shopItems = new List<ShopItem>();
         static Timer? autoSaveTimer;
-        
+
         // 프로그램 시작점 함수
         static void Main()
         {
@@ -256,44 +278,36 @@ namespace TextMapleStory
                 // 저장된 게임 불러오기
                 LoadGame();
 
-                // 상점아이템 세팅 (불러온 후에 설정)
-                shopItems.Add(new ShopItem(new Item("머쉬맘의 포자", StatType.체력, 50, "[튜토리얼 보스]머쉬맘의 포자이다. 왠지 머리에 쓰면 든든할 것 같다.", EquipmentType.모자)));
-                shopItems.Add(new ShopItem(new Item("화이트 도로스 로브", StatType.방어력, 29, "흰 천으로 만들어진 로브입니다.", EquipmentType.방어구)));
-                shopItems.Add(new ShopItem(new Item("고목나무 스태프", StatType.전투력, 35, "고목나무로 만들어진 스태프입니다.", EquipmentType.무기)));
-
-                // 초기 인벤토리 설정 (LoadGame 이후)
-                if (inventory == null || inventory.Count == 0)
+                // 초기 인벤토리 설정
+                if (player.Inventory == null || player.Inventory.Count == 0)
                 {
-                    inventory =
-                    [
-                        // 초기 인벤토리 아이템 추가
-                        new Item("운영자의 에테르넬 슈트", StatType.방어력, 5000, "운영자 스태프입니다.", EquipmentType.방어구),
-                        new Item("운영자의 데스티니 스태프", StatType.전투력, 5000, "운영자 스태프입니다.", EquipmentType.무기),
-                        new Item("나무 스태프", StatType.전투력, 3, "엘리니아 마법사들이 사용하는 흔한 스태프입니다.", EquipmentType.무기)
-                    ]; // null 방지용 초기화
+                    player.Inventory = new List<Item>
+            {
+                new Item("허름한 셔츠", StatType.방어력, 3, " ", EquipmentType.방어구),
+                new Item("허름한 모자", StatType.체력, 3, " ", EquipmentType.모자),
+                new Item("나무 스태프", StatType.전투력, 3, " ", EquipmentType.무기)
+            };
                 }
 
                 // 게임 흐름을 보여주는 화면
                 ShowMainMenu();
-                ShowStatus();
 
-                // 게임 종료 전에 저장
-                SaveGame();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"예외 발생: {ex.Message}");
+                Console.WriteLine($"게임 데이터를 불러오는 중 오류 발생: {ex.Message}");
+                Console.WriteLine("기본 설정으로 게임을 시작합니다.");
             }
             finally
             {
-                // 게임 종료 직전 저장
+                // 항상 실행됨 (정상 종료든 예외든)
                 SaveGame();
                 Console.WriteLine("[게임이 저장되었습니다.]");
 
-                // 자동 저장 타이머 종료
-                autoSaveTimer?.Dispose();
+                autoSaveTimer?.Dispose(); // 자동 저장 타이머 종료
             }
         }
+
 
         // 10분마다 자동 저장하는 함수
         static void AutoSave()
@@ -392,7 +406,7 @@ namespace TextMapleStory
         static void HeathRecovery()
         {
 
-            int totalMaxHP = player.MaxHP + inventory.Where(i => i.IsEquipped && i.Type == StatType.체력).Sum(i => i.Power);
+            int totalMaxHP = player.MaxHP + player.Inventory.Where(i => i.IsEquipped && i.Type == StatType.체력).Sum(i => i.Power);
 
             Console.WriteLine($"'500'메소를 지불하시면 파워엘릭서를 드립니다. (보유 메소: {player.Meso}");
 
@@ -401,10 +415,7 @@ namespace TextMapleStory
                 player.HP = Math.Min(player.HP + (totalMaxHP - player.HP), totalMaxHP);
                 player.Meso -= 500;
 
-                Console.WriteLine("\n[파워엘릭서의 강력함으로 체력을 전부 회복합니다...]\n");
-                Console.WriteLine($"현재 체력: {player.HP} / {totalMaxHP}");
-                Console.WriteLine($"남은 메소: {player.Meso}");
-
+                Console.WriteLine($"\n[파워엘릭서의 강력함으로 체력을 전부 회복합니다...]\n\n현재 체력: {player.HP} / {totalMaxHP}\n남은 메소: {player.Meso}");
             }
             else
             {
@@ -421,17 +432,17 @@ namespace TextMapleStory
             int totalDefense = player.Defense; // 기본값으로 player의 방어력
             int totalMaxHP = player.MaxHP;
 
-            if (inventory != null)
+            if (player.Inventory != null)
             {
                 // inventory가 null이 아닌 경우에만 추가적인 계산
-                totalAttack += inventory.Where(i => i != null && i.IsEquipped && i.Type == StatType.전투력).Sum(i => i.Power);
-                totalDefense += inventory.Where(i => i != null && i.IsEquipped && i.Type == StatType.방어력).Sum(i => i.Power);
-                totalMaxHP += inventory.Where(i => i != null && i.IsEquipped && i.Type == StatType.체력).Sum(i => i.Power);
+                totalAttack += player.Inventory.Where(i => i != null && i.IsEquipped && i.Type == StatType.전투력).Sum(i => i.Power);
+                totalDefense += player.Inventory.Where(i => i != null && i.IsEquipped && i.Type == StatType.방어력).Sum(i => i.Power);
+                totalMaxHP += player.Inventory.Where(i => i != null && i.IsEquipped && i.Type == StatType.체력).Sum(i => i.Power);
             }
             else
             {
                 // inventory가 null인 경우 처리 로직
-                Console.WriteLine("Inventory가 null입니다.");
+                Console.WriteLine("player.Inventory가 null입니다.");
             }
 
             player.HP = Math.Min(player.HP, totalMaxHP); // 체력이 totalMaxHP를 넘지 않도록 제한
@@ -445,7 +456,7 @@ namespace TextMapleStory
             Console.WriteLine($"방어력: {player.Defense} (+{totalDefense - player.Defense}) = {totalDefense}");
             Console.WriteLine($"체력: {player.MaxHP} (+{totalMaxHP - player.MaxHP}) = {player.HP} / {totalMaxHP}");
             Console.WriteLine($"경험치: {player.Exp} / {player.MaxExp}");
-            Console.WriteLine($"메소:  {player.Meso} meso\n");
+            Console.WriteLine($"보유 메소:  {GetFormattedMeso()}메소\n");
 
             // 메뉴 출력
             Console.WriteLine("0. 나가기");
@@ -464,48 +475,119 @@ namespace TextMapleStory
         }
 
         // 인벤토리 화면을 출력하는 함수
-        static void ShowInventory() 
+        static void ShowInventory()
         {
-            Console.WriteLine("인벤토리\n보유 중인 아이템을 사용할 수 있습니다.\n");
-            Console.WriteLine("[아이템 목록]");
+            Console.WriteLine($"인벤토리\n보유 중인 아이템을 사용할 수 있습니다.\n보유 메소:  {GetFormattedMeso()}메소\n\n[인벤토리 목록]");
 
-            if (inventory.Count == 0)
+            if (player.Inventory.Count == 0)
             {
                 Console.WriteLine("(아이템이 없습니다.)\n");
             }
             else
             {
+                Console.WriteLine("인벤토리 아이템 수: " + player.Inventory.Count);
                 PrintInventory();
             }
 
-            Console.WriteLine("1. 장착 관리");
-            Console.WriteLine("0. 나가기");
+            Console.WriteLine("1. 장착 관리\n2. 강화\n0.나가기");
             Console.Write("\n>> ");
             string? input = Console.ReadLine();
 
-            if (input == "1")
+            switch (input)
             {
-                ManageEquipment();
+                case "1":
+                    ManageEquipment();
+                    break;
+
+                case "2":
+                    ItemUpgrade(); // 아이템 강화 처리
+                    break;
+
+                case "0":
+                    Console.WriteLine("\n[마을로 돌아갑니다...]\n");
+                    ShowMainMenu();
+                    break;
+
+                default:
+                    Console.WriteLine("잘못된 입력입니다.\n");
+                    break;
             }
-            else if (input == "0")
+        }
+
+        static void ItemUpgrade()
+        {
+            Console.WriteLine($"\n강화를 시작하시겠습니까?\n보유 메소: {GetFormattedMeso()} 메소");
+
+            Console.WriteLine("\n[강화 가능한 아이템 목록]:");
+            for (int i = 0; i < player.Inventory.Count; i++)
             {
-                Console.WriteLine("\n[마을로 돌아갑니다...]\n");
-                ShowMainMenu();
+                var item = player.Inventory[i];
+                int itemPrice = item.Power * (1 + item.Star) * 100;
+                Console.WriteLine($"{i + 1}. {item.Name} | {item.Type} | 능력치: {item.Power} | 강화 비용: {FormatPrice(itemPrice)} 메소");
+            }
+
+            Console.WriteLine("\n강화할 아이템 번호를 입력해주세요:");
+            string? input = Console.ReadLine();
+            if (!int.TryParse(input, out int choice) || choice < 1 || choice > player.Inventory.Count)
+            {
+                Console.WriteLine("잘못된 입력입니다.");
+                ShowInventory();
+                return;
+            }
+
+            var selectedItem = player.Inventory[choice - 1];
+            int upgradePrice = selectedItem.Power * (1 + selectedItem.Star) * 100;
+
+            if (selectedItem.Star >= 30)
+            {
+                Console.WriteLine("이 아이템은 이미 최대 강화 수치(30성)에 도달했습니다.");
+                return;
+            }
+            else if (player.Meso < upgradePrice)
+            {
+                Console.WriteLine("메소가 부족합니다.");
+                return;
+            }
+
+            Random rand = new Random();
+            int successChance = 80 - (selectedItem.Star * 2);
+            int failChance = 15 + (selectedItem.Star * 2);
+            int downgradeChance = 5 + (selectedItem.Star);
+            int statBoost = rand.Next(0, 4) * selectedItem.Star;
+            int randomValue = rand.Next(1, 101);
+
+            Console.WriteLine($"\n성공 확률: {successChance}%, 실패: {failChance}%, 하락: {downgradeChance}%\n");
+
+            if (randomValue <= successChance)
+            {
+                selectedItem.Power += statBoost;
+                selectedItem.Star++;
+                Console.WriteLine($"{selectedItem.Name} 강화에 성공했습니다! 능력치 +{statBoost} → 현재 능력치: {selectedItem.Power}");
+            }
+            else if (randomValue <= successChance + failChance)
+            {
+                Console.WriteLine($"{selectedItem.Name} 강화에 실패했습니다.");
             }
             else
             {
-                Console.WriteLine("잘못된 입력입니다.\n");
+                selectedItem.Power = Math.Max(1, selectedItem.Power - selectedItem.Star);
+                Console.WriteLine($"{selectedItem.Name} 강화에 실패하여 능력치가 하락했습니다. 현재 능력치: {selectedItem.Power}");
             }
+
+            player.Meso -= upgradePrice;
+            Console.WriteLine($"[{FormatPrice(upgradePrice)}] 메소가 사용되었습니다.");
+
+            ShowInventory();
         }
+
 
         // 아이템을 장착 관리하는 함수
         static void ManageEquipment()
         {
-            Console.WriteLine("인벤토리 - 장착 관리\n 보유 중인 아이템을 관리할 수 있습니다.");
-            Console.WriteLine("[아이템 목록]");
+            Console.WriteLine("인벤토리 - 장착 관리\n 보유 중인 아이템을 관리할 수 있습니다.\n[아이템 목록]");
 
             // 장착할 수 있는 아이템만 필터링
-            var equipableItems = inventory.Where(i => i.EquipmentType == EquipmentType.무기 ||
+            var equipableItems = player.Inventory.Where(i => i.EquipmentType == EquipmentType.무기 ||
                                                i.EquipmentType == EquipmentType.방어구 ||
                                                i.EquipmentType == EquipmentType.모자 ||
                                                i.EquipmentType == EquipmentType.보조무기 ||
@@ -522,8 +604,7 @@ namespace TextMapleStory
                 Console.WriteLine($"{i + 1}. {equippedMark} {item.Name} | {item.Description} | {item.EquipmentType}");
             }
 
-            Console.WriteLine("0. 나가기\n");
-            Console.WriteLine("\n>> ");
+            Console.WriteLine("0. 나가기\n\n>> ");
             string? input = Console.ReadLine();
 
             if (int.TryParse(input, out int index))
@@ -542,7 +623,7 @@ namespace TextMapleStory
                     {
                         // 장착된 아이템을 해제
                         selectedItem.IsEquipped = false;
-                        var itemToUpdate = inventory.First(i => i.Name == selectedItem.Name);
+                        var itemToUpdate = player.Inventory.First(i => i.Name == selectedItem.Name);
                         itemToUpdate.IsEquipped = false;
 
                         Console.WriteLine($"{selectedItem.Name}을(를) 해제했습니다.");
@@ -551,7 +632,7 @@ namespace TextMapleStory
                     else
                     {
                         // 동일한 아이템 타입을 가진 기존 장착 아이템 해제
-                        var equippedItem = inventory.FirstOrDefault(i => i.IsEquipped && i.EquipmentType == selectedItem.EquipmentType);
+                        var equippedItem = player.Inventory.FirstOrDefault(i => i.IsEquipped && i.EquipmentType == selectedItem.EquipmentType);
                         if (equippedItem != null)
                         {
                             equippedItem.IsEquipped = false;
@@ -562,7 +643,7 @@ namespace TextMapleStory
                         selectedItem.IsEquipped = true;
 
                         // 장착된 아이템을 업데이트
-                        var itemToUpdate = inventory.First(i => i.Name == selectedItem.Name);
+                        var itemToUpdate = player.Inventory.First(i => i.Name == selectedItem.Name);
                         itemToUpdate.IsEquipped = selectedItem.IsEquipped;
 
                         Console.WriteLine($"{selectedItem.Name}을(를) 장착했습니다.");
@@ -584,23 +665,30 @@ namespace TextMapleStory
 
 
         // 인벤토리에 있는 아이템 목록을 출력하는 함수
-        static void PrintInventory(bool showIndex = false) 
+        static void PrintInventory(bool showIndex = false)
         {
-            if (inventory.Count == 0)
+            if (player.Inventory.Count == 0)  // player.Inventory로 변경
             {
                 Console.WriteLine("(아이템이 없습니다.)");
                 return;
             }
 
-            for (int i = 0; i < inventory.Count; i++)
+            for (int i = 0; i < player.Inventory.Count; i++)  // player.Inventory로 변경
             {
-                Item item = inventory[i];
+                // 인덱스가 유효한지 확인
+                if (i >= player.Inventory.Count)  // 인덱스 범위 체크
+                {
+                    Console.WriteLine("아이템 인덱스가 범위를 초과했습니다.");
+                    break;
+                }
+
+                Item item = player.Inventory[i];  // player.Inventory로 변경
                 string equippedMark = item.IsEquipped ? "[E]" : "";
                 string prefix = showIndex ? $"{i + 1}. " : "- ";
                 Console.WriteLine($"{prefix}{equippedMark}{item.Name} | " +
-                          $"{item.Type} : {item.Power} | " +
-                          $"설명: {item.Description} | " +
-                          $"장비타입: {Enum.GetName(typeof(EquipmentType), item.EquipmentType)}");
+                                  $"{item.Type} : {item.Power} | " +
+                                  $"설명: {item.Description} | " +
+                                  $"장비타입: {Enum.GetName(typeof(EquipmentType), item.EquipmentType)}");
             }
 
             Console.WriteLine();
@@ -609,13 +697,7 @@ namespace TextMapleStory
         // 상점 화면을 출력하는 함수
         static void ShowShop()
         {
-            Console.WriteLine("상점");
-            Console.WriteLine("필요한 아이템을 얻을 수 있는 상점입니다.\n");
-
-            Console.WriteLine("[보유 메소]");
-            Console.WriteLine($"{player.Meso} 메소\n");
-
-            Console.WriteLine("[아이템 목록]");
+            Console.WriteLine($"상점\n필요한 아이템을 얻을 수 있는 상점입니다.\n\n\n[보유 메소]: {GetFormattedMeso()}메소\n\n\n[구매 가능한 아이템 목록]");
             for (int i = 0; i < shopItems.Count; i++)
             {
                 var shopItem = shopItems[i];
@@ -629,12 +711,9 @@ namespace TextMapleStory
                 Console.WriteLine($"- {i + 1} {name} | {type} +{power} | {desc} | {equipmentType} | {priceText}");
             }
 
-            Console.WriteLine("\n1. 아이템 구매");
-            Console.WriteLine("2. 아이템 판매");
-            Console.WriteLine("0. 나가기");
-            Console.Write("\n원하시는 행동을 입력해주세요.\n>> ");
+            Console.WriteLine("\n1. 아이템 구매\n2. 아이템 판매\n0. 나가기\n\n원하시는 행동을 입력해주세요.\n>> ");
             string? input = Console.ReadLine();
-            
+
             switch (input)
             {
                 case "1":
@@ -657,18 +736,22 @@ namespace TextMapleStory
             }
 
             // 아이템 구매 처리 함수
-            static void HandlePurchase() 
+            static void HandlePurchase()
             {
-                Console.WriteLine("\n[아이템 목록]");
+                Console.WriteLine("\n[구매 가능한 아이템 목록]");
                 for (int i = 0; i < shopItems.Count; i++)
                 {
-                    var item = shopItems[i];
-                    string status = item.IsPurchased ? "구매완료" : $"{item.Price} 메소";
-                    Console.WriteLine($"{i + 1}. {item.ItemData.Name} | {item.ItemData.Type} +{item.ItemData.Power} | {item.ItemData.Description} | | {item.ItemData.EquipmentType}");
+                    var shopItem = shopItems[i];
+                    string name = shopItem.ItemData.Name;
+                    string type = shopItem.ItemData.Type.ToString();
+                    int power = shopItem.ItemData.Power;
+                    string desc = shopItem.ItemData.Description;
+                    string priceText = shopItem.IsPurchased ? "구매완료" : $"{shopItem.Price} 메소";
+                    string equipmentType = shopItem.ItemData.EquipmentType.ToString();
+                    Console.WriteLine($"- {i + 1} {name} | {type} +{power} | {desc} | {equipmentType} | {priceText}");
                 }
 
-                Console.WriteLine("0. 나가기");
-                Console.Write("\n원하시는 아이템 번호를 입력해주세요.\n>> ");
+                Console.WriteLine("0. 나가기\n\n원하시는 아이템 번호를 입력해주세요.\n>> ");
                 string? input = Console.ReadLine();
 
                 if (int.TryParse(input, out int index))
@@ -696,7 +779,7 @@ namespace TextMapleStory
                     else if (player.Meso >= selectedItem.Price)
                     {
                         player.Meso -= selectedItem.Price;
-                        inventory.Add(selectedItem.ItemData);
+                        player.Inventory.Add(selectedItem.ItemData);
                         selectedItem.Purchase();
 
                         Console.WriteLine($"{selectedItem.ItemData.Name}을(를) 구매했습니다!\n");
@@ -717,12 +800,12 @@ namespace TextMapleStory
         }
 
         // 아이템 판매 처리 함수
-        static void HandleSale() 
+        static void HandleSale()
         {
-            Console.WriteLine("\n[판매할 아이템 목록]");
+            Console.WriteLine("\n[판매 가능한 아이템 목록]");
 
             // 판매할 수 있는 아이템만 필터링 (장착되지 않은 아이템들)
-            var sellableItems = inventory.Where(i => i.IsEquipped == false).ToList();
+            var sellableItems = player.Inventory.Where(i => !i.IsEquipped).ToList();  // player.Inventory 사용
 
             // 판매할 아이템이 없을 경우
             if (sellableItems.Count == 0)
@@ -736,13 +819,12 @@ namespace TextMapleStory
             for (int i = 0; i < sellableItems.Count; i++)
             {
                 var item = sellableItems[i];
-                // 아이템 가격은 구매가격의 절반으로 책정
-                int salePrice = item.Price / 2;
-                Console.WriteLine($"{i + 1}. {item.Name} | 판매가격: {salePrice} 메소 | {item.Description}");
+                // 판매가격 계산: Power * 500
+                int salePrice = item.Power * 500;  // 가격 계산 수정
+                Console.WriteLine($"{i + 1}. {item.Name} | {item.Type} +{item.Power} | 판매가격: {salePrice} 메소 | {item.Description}");
             }
 
-            Console.WriteLine("0. 나가기");
-            Console.Write("\n판매할 아이템 번호를 입력해주세요.\n>> ");
+            Console.WriteLine("0. 나가기\n\n판매할 아이템 번호를 입력해주세요.\n>> ");
             string? input = Console.ReadLine();
 
             // 아이템 번호를 선택한 경우
@@ -756,14 +838,14 @@ namespace TextMapleStory
                 {
                     var selectedItem = sellableItems[index - 1];
 
-                    // 아이템 판매 가격 계산
-                    int salePrice = selectedItem.Power / 2;
+                    // 아이템 판매 가격 계산: Power * 500
+                    int salePrice = selectedItem.Power * 500;
 
                     // 메소 추가
                     player.Meso += salePrice;
 
                     // 아이템을 인벤토리에서 제거
-                    inventory.Remove(selectedItem);
+                    player.Inventory.Remove(selectedItem);  // player.Inventory에서 제거
 
                     Console.WriteLine($"{selectedItem.Name}을(를) 판매하여 {salePrice} 메소를 얻었습니다.\n");
                     ShowShop();
@@ -787,20 +869,20 @@ namespace TextMapleStory
             SaveData data = SaveData.Instance;  // Singleton 인스턴스를 사용합니다.
 
             data.Player = player;
-            data.Inventory = inventory;
+            data.Inventory = player.Inventory;
             data.ShopPurchases = shopItems.Select(item => item.IsPurchased).ToList();
             data.HasClassChanged = player.HasClassChanged;  // 전직 여부 저장
 
             string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
 
-            string filePath = Path.Combine(Directory.GetParent(Directory.GetCurrentDirectory())?.FullName ?? Directory.GetCurrentDirectory(),"savegame.json");
+            string filePath = Path.Combine(Directory.GetParent(Directory.GetCurrentDirectory())?.FullName ?? Directory.GetCurrentDirectory(), "savegame.json");
             File.WriteAllText(filePath, json);
 
             Console.WriteLine($"게임 데이터가 저장되었습니다: {filePath}");
         }
 
         // 게임 데이터를 로드하는 함수
-        static void LoadGame() 
+        static void LoadGame()
         {
             string filePath = Path.Combine(Directory.GetParent(Directory.GetCurrentDirectory())?.FullName ?? Directory.GetCurrentDirectory(), "savegame.json");
 
@@ -812,32 +894,28 @@ namespace TextMapleStory
 
             if (data != null)
             {
-                player = data.Player ?? new Character();  // Player가 null일 경우 새로운 Character 객체 생성
-                inventory = data.Inventory ?? new List<Item>();  // Inventory가 null일 경우 빈 리스트로 초기화
-                                                                 // ShopPurchases를 사용하여 shopItems 생성
-                shopItems = new List<ShopItem>();
-                for (int i = 0; i < data.ShopPurchases.Count; i++)
-                {
-                    var item = shopItems[i];  // 여기서 기존 상점 아이템 리스트를 가져와야 할 부분
-                    bool isPurchased = data.ShopPurchases[i];
-                    item.IsPurchased = isPurchased;  // 아이템의 구매 여부 갱신
-                }
-
-                player.Attack = data.Player?.Attack ?? 10;  // 공격력 로드
-                player.Defense = data.Player?.Defense ?? 5;  // 방어력 로드
+                // 기본 캐릭터 정보
+                player = data.Player ?? new Character();
+                player.Inventory = data.Inventory ?? new List<Item>();
+                player.Attack = data.Player?.Attack ?? 10;
+                player.Defense = data.Player?.Defense ?? 5;
                 player.Exp = data.Player?.Exp ?? 0;
                 player.Level = data.Player?.Level ?? 1;
-                player.HasClassChanged = data.HasClassChanged;  // 전직 여부 불러오기
+                player.HasClassChanged = data.HasClassChanged;
+                player.Job = player.HasClassChanged ? "마법사" : "초보자";
 
-                // 전직이 완료되었다면 직업을 마법사로 설정
-                if (player.HasClassChanged)
+                // 상점 아이템 구성 (※ Main에서는 하지 않음)
+                shopItems = new List<ShopItem>
                 {
-                    player.Job = "마법사";
-                }
-                else
+            new ShopItem(new Item("머쉬맘의 포자", StatType.체력, 50, "[튜토리얼 보스]머쉬맘의 포자이다. 머리에 쓰면 든든할 것 같다.", EquipmentType.모자)),
+            new ShopItem(new Item("화이트 도로스 로브", StatType.방어력, 29, "흰 천으로 만들어진 로브입니다.", EquipmentType.방어구)),
+            new ShopItem(new Item("고목나무 스태프", StatType.전투력, 35, "고목나무로 만들어진 스태프입니다.", EquipmentType.무기))
+                };
+
+                // 구매 여부 반영
+                for (int i = 0; i < data.ShopPurchases.Count && i < shopItems.Count; i++)
                 {
-                    // 전직이 완료되지 않았으면 초보자 직업을 유지
-                    player.Job = "초보자";
+                    shopItems[i].IsPurchased = data.ShopPurchases[i];
                 }
             }
         }
@@ -847,16 +925,14 @@ namespace TextMapleStory
         {
             while (player.HP > 0 && monster.HP > 0)
             {
-                Console.WriteLine($"{monster.Name}의 체력: {monster.HP}");
-                Console.WriteLine($"{player.Name}의 체력: {player.HP}");
-                Console.WriteLine("1. 공격\n2. 방어\n0. 도망");
+                Console.WriteLine($"{monster.Name}의 체력: {monster.HP}\n{player.Name}의 체력: {player.HP}\n1. 공격\n2. 방어\n0. 도망");
                 string? input = Console.ReadLine();
 
                 if (input == "1")  // 공격
                 {
-                    int totalAttack = player.Attack + inventory.Where(i => i.IsEquipped && i.Type == StatType.전투력).Sum(i => i.Power);
-                    int totalDefense = player.Defense + inventory.Where(i => i.IsEquipped && i.Type == StatType.방어력).Sum(i => i.Power);
-                    int totalMaxHP = player.MaxHP + inventory.Where(i => i.IsEquipped && i.Type == StatType.체력).Sum(i => i.Power);
+                    int totalAttack = player.Attack + player.Inventory.Where(i => i.IsEquipped && i.Type == StatType.전투력).Sum(i => i.Power);
+                    int totalDefense = player.Defense + player.Inventory.Where(i => i.IsEquipped && i.Type == StatType.방어력).Sum(i => i.Power);
+                    int totalMaxHP = player.MaxHP + player.Inventory.Where(i => i.IsEquipped && i.Type == StatType.체력).Sum(i => i.Power);
 
                     int damage = totalAttack - monster.Defense;
                     damage = damage > 0 ? damage : 1;  // 피해가 최소 1이 되도록
@@ -878,7 +954,7 @@ namespace TextMapleStory
 
                     if (player.HP <= 0)
                     {
-                        player.HP = (int) (totalMaxHP * 0.5);
+                        player.HP = (int)(totalMaxHP * 0.5);
                         Console.WriteLine($"{player.Name}은 쓰러졌습니다. 마을로 이송됩니다.\n{player.Name}의 체력이 {player.HP}로 회복되었습니다.");
                         ShowMainMenu();
                         break;
@@ -886,8 +962,7 @@ namespace TextMapleStory
                 }
                 else if (input == "0")  // 도망
                 {
-                    Console.WriteLine("[전투에서 도망쳤습니다.]");
-                    Console.WriteLine("\n[마을로 돌아갑니다...]\n");
+                    Console.WriteLine("[전투에서 도망쳤습니다.]\n\n[마을로 돌아갑니다...]\n");
                     ShowMainMenu();
                     break;
                 }
@@ -895,7 +970,7 @@ namespace TextMapleStory
         }
 
         // 사냥터 화면을 출력하는 함수
-        static void ShowHenesysZones() 
+        static void ShowHenesysZones()
         {
             Console.WriteLine("=============================================");
             Console.WriteLine("튜토리얼 사냥터를 선택해주세요:");
@@ -936,25 +1011,11 @@ namespace TextMapleStory
         }
 
         // 사냥터에 입장하여 몬스터와 전투를 시작하는 함수
-        static void EnterHenesysZone(string zoneName, string monsterName, int hp, int attack, int defense, int expReward, int mesoDrop) 
+        static void EnterHenesysZone(string zoneName, string monsterName, int hp, int attack, int defense, int expReward, int mesoDrop)
         {
             Console.WriteLine($"{zoneName}에 도달했습니다!");
             Console.WriteLine($"'{monsterName}'이 나타났습니다!");
             Monster monster = new Monster(monsterName, hp, attack, defense, expReward, mesoDrop);
-
-            // 머쉬맘의 드롭 아이템 설정
-            if (monsterName.Contains("머쉬맘"))  // 머쉬맘일 경우에만 드롭 아이템 설정
-            {
-                Random rand = new Random();
-                double dropChance = rand.NextDouble();  // 0과 1 사이의 실수값 반환
-
-                // 예를 들어, 20% 확률로 드롭 아이템을 주기로 설정
-                if (dropChance <= 0.7)  // 드랍률
-                {
-                    monster.AddDroppedItem(new Item("머쉬맘의 포자", StatType.체력, 50, "[튜토리얼 보스]머쉬맘의 포자이다. 왠지 머리에 쓰면 든든할 것 같다.", EquipmentType.모자));
-                    Console.WriteLine("머쉬맘의 포자가 드랍되었습니다!");
-                }
-            }
 
             Battle(monster);  // 전투 시작
         }
